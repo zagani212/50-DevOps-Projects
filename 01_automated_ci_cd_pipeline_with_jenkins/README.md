@@ -1,6 +1,14 @@
 # Automated CI/CD pipeline with Jenkins
 
+Directory: **`01_automated_ci_cd_pipeline_with_jenkins`** — numbered prefixes keep the fifty DevOps labs in lesson order inside this repo.
+
 This folder is part of the DevOps projects collection and focuses on continuous integration and delivery using **Jenkins** on Linux.
+
+The sample Maven project used to exercise Jenkins steps (compile, test, static analysis, package, publish) lives in **`jenkins-demo-app/`** under this folder. From the repo root:
+
+```bash
+cd 01_automated_ci_cd_pipeline_with_jenkins/jenkins-demo-app
+```
 
 ---
 
