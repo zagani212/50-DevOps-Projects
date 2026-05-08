@@ -7,38 +7,38 @@ pipeline {
 
     stages {
 
-        stage('Clone') {
-            steps {
-                echo 'Cloning repository...'
-            }
-        }
-
         stage('Build') {
             steps {
-                sh 'mvn clean compile'
+                dir('01_automated_ci_cd_pipeline_with_jenkins/jenkins-demo-app') {
+                    sh 'mvn clean compile'
+                }
             }
         }
 
         stage('Test') {
             steps {
-                sh 'mvn test'
+                dir('01_automated_ci_cd_pipeline_with_jenkins/jenkins-demo-app') {
+                    sh 'mvn test'
+                }
             }
         }
 
         stage('Package') {
             steps {
-                sh 'mvn package'
+                dir('01_automated_ci_cd_pipeline_with_jenkins/jenkins-demo-app') {
+                    sh 'mvn package'
+                }
             }
         }
     }
 
     post {
         success {
-            echo 'Build completed successfully!'
+            echo 'Pipeline completed successfully!'
         }
 
         failure {
-            echo 'Build failed!'
+            echo 'Pipeline failed!'
         }
     }
 }
