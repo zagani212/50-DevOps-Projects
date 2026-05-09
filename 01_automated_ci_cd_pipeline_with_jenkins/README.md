@@ -94,7 +94,9 @@ If you cannot reach port 8080 from another host, configure a firewall (for examp
 
 ## Running SonarQube (Docker)
 
-The **`jenkins-demo-app/Jenkinsfile`** runs **SonarQube analysis** and **waits for the quality gate**. You need a SonarQube server reachable from your Jenkins agent; here it is started as a **Docker** container on the same machine or another host.
+The **`jenkins-demo-app/Jenkinsfile`** runs **SonarQube analysis** and **waits for the quality gate**. SonarQube must be reachable from Jenkins and from the build agents.
+
+Use **`SONAR_HOST`** wherever browser users and Jenkins agents should talk to SonarQube (for example `192.168.1.50` or a DNS name). Use **`JENKINS_HOST`** wherever SonarQube must reach the Jenkins controller for webhooks.
 
 ### Start the server
 
@@ -102,17 +104,56 @@ The **`jenkins-demo-app/Jenkinsfile`** runs **SonarQube analysis** and **waits f
 docker run -d --name sonarqube -p 9000:9000 sonarqube:lts-community
 ```
 
-- **Web UI:** `http://localhost:9000` (or `http://<docker-host-ip>:9000` from another machine).
-- **First login:** SonarQube ships with default credentials **`admin` / `admin`** and will prompt you to change the password.
-- **Jenkins:** In **Manage Jenkins → Configure System → SonarQube servers**, set **Server URL** to that same base URL (for example `http://<sonar-host>:9000`) and add a **token** from SonarQube (**User → My Account → Security** → Generate Token). The server **Name** there must match the **`SONARQUBE_INSTALLATION`** parameter in the pipeline (default **`SonarQube`**).
+Open SonarQube in a browser (**`http://<SONAR_HOST>:9000`**) and sign in with **`admin` / `admin`**. Complete the wizard if prompted (you may be asked to choose a **new administrator password**; use that afterward instead of **`admin`** for login).
 
-If the container exits or logs show Elasticsearch bootstrap errors on **Linux**, increase the host limit (SonarQube’s embedded search layer often needs this):
+If the container exits or logs show Elasticsearch bootstrap errors on **Linux**, increase:
 
 ```bash
 sudo sysctl -w vm.max_map_count=262144
 ```
 
-To remove and recreate the container later: `docker stop sonarqube && docker rm sonarqube` before running `docker run` again (or use `docker rename` / volume mounts only if you need to persist data).
+To recreate the container: `docker stop sonarqube && docker rm sonarqube`, then run the `docker run` command again (add a Docker volume if you need analysis history to persist).
+
+### Configure SonarQube (dashboard)
+
+In SonarQube, logged in as an administrator (**`admin`** until you rotate it):
+
+1. **Administration → Configuration → General Settings → General**  
+   Set **SonarQube server base URL** to how others should open Sonar (match your network):  
+
+   **`http://<SONAR_HOST>:9000`**
+
+   Save.
+
+2. **Administration → Configuration → Webhooks** → **Create**  
+   Tell SonarQube to notify Jenkins when an analysis completes (so **`waitForQualityGate`** reacts quickly):
+   - **Name:** **`Jenkins`**
+   - **URL:** **`http://<JENKINS_HOST>:8080/sonarqube-webhook/`**  
+
+   Replace **`<JENKINS_HOST>`** with an address the **SonarQube container** can reach—not always `localhost` if Sonar and Jenkins sit on different machines or isolated Docker networks.
+
+3. **Create a Jenkins token in SonarQube**  
+   Click your avatar → **Account** → **Security** → **Generate Token**. Copy the token; you paste it into Jenkins in the step below.
+
+### Configure Jenkins
+
+1. **Manage Jenkins → Plugins** → install the **SonarQube Scanner** plugin (Sonar plugin that adds the **SonarQube servers** block and **`/sonarqube-webhook/`** endpoint). Restart Jenkins if the installer prompts you.
+
+2. **Manage Jenkins → System** (“Configure System” in classic Jenkins)—scroll to **SonarQube servers**.
+
+   | Field | Value |
+   |--------|--------|
+   | **Name** | **`SonarQube`** |
+   | **Server URL** | **`http://<SONAR_HOST>:9000`** |
+   | **Server authentication token** | **Add → Jenkins → _Secret text_** |
+
+   For the credential:
+   - **Secret:** paste the token from SonarQube (**Account → Security**).
+   - **ID:** **`sonarqube-token`** (any unique ID works; document this since you reuse it elsewhere).  
+
+   Finish adding the credential, select it from the dropdown, save the system configuration.
+
+The **Name** **`SonarQube`** matches the **`SONARQUBE_INSTALLATION`** pipeline parameter default in **`jenkins-demo-app/Jenkinsfile`**.
 
 ---
 
