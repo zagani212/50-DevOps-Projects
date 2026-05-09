@@ -1,9 +1,24 @@
-/* Jenkins credential IDs (adjust IDs to match your setup):
- *   Secret text:        staging-vm-ip, production-vm-ip     (each value is the VM IP/host)
- *   SSH User + key:      staging-vm-ssh-key, production-vm-ssh-key
+/* Jenkins credential IDs (Kinds must match the bindings below):
+ *   Secret text:              staging-vm-ip, production-vm-ip
+ *   SSH Username + private key (not "secret file"):  staging-vm-ssh-key, production-vm-ssh-key
+ *
+ * Deploy stages run only when the corresponding checkbox is enabled in "Build With Parameters".
  */
 pipeline {
     agent any
+
+    parameters {
+        booleanParam(
+            name: 'DEPLOY_TO_STAGING',
+            defaultValue: false,
+            description: 'Runs SCP to the staging VM using credentials staging-vm-ip + staging-vm-ssh-key.'
+        )
+        booleanParam(
+            name: 'DEPLOY_TO_PRODUCTION',
+            defaultValue: false,
+            description: 'Runs production deploy after manual approval (main/master only); needs production-vm-ip + production-vm-ssh-key.'
+        )
+    }
 
     options {
         timestamps()
@@ -55,8 +70,8 @@ pipeline {
             steps {
                 dir(env.APP_DIR) {
                     sh 'mvn -B deploy'
-                    archiveArtifacts artifacts: "${env.APP_DIR}/target/*.jar,${env.APP_DIR}/target/ci-staging-repo/**",
-                        excludes: "**/*-sources.jar",
+                    archiveArtifacts artifacts: 'target/*.jar,target/ci-staging-repo/**',
+                        excludes: '**/*-sources.jar',
                         fingerprint: true,
                         allowEmptyArchive: false
                 }
@@ -64,6 +79,9 @@ pipeline {
         }
 
         stage('Deploy to Staging') {
+            when {
+                expression { return params.DEPLOY_TO_STAGING }
+            }
             steps {
                 withCredentials([
                     string(credentialsId: 'staging-vm-ip', variable: 'STAGING_VM_IP'),
@@ -77,8 +95,8 @@ pipeline {
                         sh '''
                             set -eu
                             JAR=$(ls target/jenkins-demo-app-*.jar | head -1)
-                            chmod 600 "$STAGING_SSH_PRIVATE_KEY"
-                            scp -i "$STAGING_SSH_PRIVATE_KEY" -o StrictHostKeyChecking=accept-new \
+                            scp -i "$STAGING_SSH_PRIVATE_KEY" -o BatchMode=yes \
+                                -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
                                 "$JAR" "${STAGING_SSH_USER}@${STAGING_VM_IP}:${STAGING_REMOTE_JAR}"
                         '''
                     }
@@ -99,9 +117,12 @@ pipeline {
 
         stage('Deploy to Production') {
             when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
+                allOf {
+                    anyOf {
+                        branch 'main'
+                        branch 'master'
+                    }
+                    expression { return params.DEPLOY_TO_PRODUCTION }
                 }
             }
             steps {
@@ -118,8 +139,8 @@ pipeline {
                         sh '''
                             set -eu
                             JAR=$(ls target/jenkins-demo-app-*.jar | head -1)
-                            chmod 600 "$PRODUCTION_SSH_PRIVATE_KEY"
-                            scp -i "$PRODUCTION_SSH_PRIVATE_KEY" -o StrictHostKeyChecking=accept-new \
+                            scp -i "$PRODUCTION_SSH_PRIVATE_KEY" -o BatchMode=yes \
+                                -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
                                 "$JAR" "${PRODUCTION_SSH_USER}@${PRODUCTION_VM_IP}:${PRODUCTION_REMOTE_JAR}"
                         '''
                     }
