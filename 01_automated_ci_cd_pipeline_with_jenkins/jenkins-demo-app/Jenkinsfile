@@ -1,32 +1,128 @@
+/* Jenkins credential IDs (adjust IDs to match your setup):
+ *   Secret text:        staging-vm-ip, production-vm-ip     (each value is the VM IP/host)
+ *   SSH User + key:      staging-vm-ssh-key, production-vm-ssh-key
+ */
 pipeline {
     agent any
+
+    options {
+        timestamps()
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+    }
+
+    environment {
+        APP_DIR = '01_automated_ci_cd_pipeline_with_jenkins/jenkins-demo-app'
+        STAGING_REMOTE_JAR = '~/jenkins-demo-app.jar'
+        PRODUCTION_REMOTE_JAR = '~/jenkins-demo-app.jar'
+    }
 
     tools {
         maven 'Maven3'
     }
 
     stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
 
         stage('Build') {
             steps {
-                dir('01_automated_ci_cd_pipeline_with_jenkins/jenkins-demo-app') {
-                    sh 'mvn clean compile'
+                dir(env.APP_DIR) {
+                    sh 'mvn -B clean compile'
                 }
             }
         }
 
-        stage('Test') {
+        stage('Unit Test') {
             steps {
-                dir('01_automated_ci_cd_pipeline_with_jenkins/jenkins-demo-app') {
-                    sh 'mvn test'
+                dir(env.APP_DIR) {
+                    sh 'mvn -B test'
                 }
             }
         }
 
-        stage('Package') {
+        stage('Code Analysis') {
             steps {
-                dir('01_automated_ci_cd_pipeline_with_jenkins/jenkins-demo-app') {
-                    sh 'mvn package'
+                dir(env.APP_DIR) {
+                    sh 'mvn -B compile test-compile checkstyle:check spotbugs:check'
+                }
+            }
+        }
+
+        stage('Artifact Publish') {
+            steps {
+                dir(env.APP_DIR) {
+                    sh 'mvn -B deploy'
+                    archiveArtifacts artifacts: "${env.APP_DIR}/target/*.jar,${env.APP_DIR}/target/ci-staging-repo/**",
+                        excludes: "**/*-sources.jar",
+                        fingerprint: true,
+                        allowEmptyArchive: false
+                }
+            }
+        }
+
+        stage('Deploy to Staging') {
+            steps {
+                withCredentials([
+                    string(credentialsId: 'staging-vm-ip', variable: 'STAGING_VM_IP'),
+                    sshUserPrivateKey(
+                        credentialsId: 'staging-vm-ssh-key',
+                        keyFileVariable: 'STAGING_SSH_PRIVATE_KEY',
+                        usernameVariable: 'STAGING_SSH_USER'
+                    )
+                ]) {
+                    dir(env.APP_DIR) {
+                        sh '''
+                            set -eu
+                            JAR=$(ls target/jenkins-demo-app-*.jar | head -1)
+                            chmod 600 "$STAGING_SSH_PRIVATE_KEY"
+                            scp -i "$STAGING_SSH_PRIVATE_KEY" -o StrictHostKeyChecking=accept-new \
+                                "$JAR" "${STAGING_SSH_USER}@${STAGING_VM_IP}:${STAGING_REMOTE_JAR}"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Integration Test') {
+            steps {
+                dir(env.APP_DIR) {
+                    sh '''
+                        echo "Running integration / API smoke tests against staging..."
+                        echo "Example: mvn -B failsafe:integration-test failsafe:verify"
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to Production') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                }
+            }
+            steps {
+                input message: 'Approve production deployment?', ok: 'Deploy'
+                withCredentials([
+                    string(credentialsId: 'production-vm-ip', variable: 'PRODUCTION_VM_IP'),
+                    sshUserPrivateKey(
+                        credentialsId: 'production-vm-ssh-key',
+                        keyFileVariable: 'PRODUCTION_SSH_PRIVATE_KEY',
+                        usernameVariable: 'PRODUCTION_SSH_USER'
+                    )
+                ]) {
+                    dir(env.APP_DIR) {
+                        sh '''
+                            set -eu
+                            JAR=$(ls target/jenkins-demo-app-*.jar | head -1)
+                            chmod 600 "$PRODUCTION_SSH_PRIVATE_KEY"
+                            scp -i "$PRODUCTION_SSH_PRIVATE_KEY" -o StrictHostKeyChecking=accept-new \
+                                "$JAR" "${PRODUCTION_SSH_USER}@${PRODUCTION_VM_IP}:${PRODUCTION_REMOTE_JAR}"
+                        '''
+                    }
                 }
             }
         }
@@ -34,11 +130,10 @@ pipeline {
 
     post {
         success {
-            echo 'Pipeline completed successfully!'
+            echo 'Pipeline completed successfully.'
         }
-
         failure {
-            echo 'Pipeline failed!'
+            echo 'Pipeline failed.'
         }
     }
 }
