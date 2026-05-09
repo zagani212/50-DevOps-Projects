@@ -4,7 +4,8 @@
  * Jenkins credential kind "Username + password": NEXUS_CREDENTIALS_ID (default nexus-credentials).
  * Repos: maven-snapshots / maven-releases (hosted).
  *
- * Deploy to staging/prod VMs: enable checkbox parameters; secrets staging-vm-ip, staging-vm-ssh-key, etc.
+ * Deploy to staging/prod: Ansible (ansible-playbook). Agent must have ansible-core installed.
+ * Playbook: ansible/playbooks/deploy-jar.yml — same credentials as before (staging-vm-ip + staging-vm-ssh-key).
  */
 pipeline {
     agent any
@@ -19,12 +20,12 @@ pipeline {
         booleanParam(
             name: 'DEPLOY_TO_STAGING',
             defaultValue: false,
-            description: 'Runs SCP to the staging VM using credentials staging-vm-ip + staging-vm-ssh-key.'
+            description: 'Runs ansible/playbooks/deploy-jar.yml against staging (staging-vm-ip + staging-vm-ssh-key).'
         )
         booleanParam(
             name: 'DEPLOY_TO_PRODUCTION',
             defaultValue: false,
-            description: 'Runs production deploy after manual approval (main/master only); needs production-vm-ip + production-vm-ssh-key.'
+            description: 'Runs deploy playbook to production after approval (main/master); production-vm-ip + production-vm-ssh-key.'
         )
         string(
             name: 'NEXUS_BASE_URL',
@@ -170,9 +171,16 @@ pipeline {
                         sh '''
                             set -eu
                             JAR=$(ls target/jenkins-demo-app-*.jar | head -1)
-                            scp -i "$STAGING_SSH_PRIVATE_KEY" -o BatchMode=yes \
-                                -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-                                "$JAR" "${STAGING_SSH_USER}@${STAGING_VM_IP}:${STAGING_REMOTE_JAR}"
+                            JAR_ABS="$(pwd)/$JAR"
+                            JAR_NAME="$(basename "${STAGING_REMOTE_JAR}")"
+                            export ANSIBLE_CONFIG="$(pwd)/ansible/ansible.cfg"
+                            export ANSIBLE_HOST_KEY_CHECKING=False
+                            export ANSIBLE_PRIVATE_KEY_FILE="${STAGING_SSH_PRIVATE_KEY}"
+                            ansible-playbook ansible/playbooks/deploy-jar.yml \
+                                -i "${STAGING_VM_IP}," \
+                                -u "${STAGING_SSH_USER}" \
+                                -e "deploy_jar_src=${JAR_ABS}" \
+                                -e "deploy_jar_name=${JAR_NAME}"
                         '''
                     }
                 }
@@ -214,9 +222,16 @@ pipeline {
                         sh '''
                             set -eu
                             JAR=$(ls target/jenkins-demo-app-*.jar | head -1)
-                            scp -i "$PRODUCTION_SSH_PRIVATE_KEY" -o BatchMode=yes \
-                                -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-                                "$JAR" "${PRODUCTION_SSH_USER}@${PRODUCTION_VM_IP}:${PRODUCTION_REMOTE_JAR}"
+                            JAR_ABS="$(pwd)/$JAR"
+                            JAR_NAME="$(basename "${PRODUCTION_REMOTE_JAR}")"
+                            export ANSIBLE_CONFIG="$(pwd)/ansible/ansible.cfg"
+                            export ANSIBLE_HOST_KEY_CHECKING=False
+                            export ANSIBLE_PRIVATE_KEY_FILE="${PRODUCTION_SSH_PRIVATE_KEY}"
+                            ansible-playbook ansible/playbooks/deploy-jar.yml \
+                                -i "${PRODUCTION_VM_IP}," \
+                                -u "${PRODUCTION_SSH_USER}" \
+                                -e "deploy_jar_src=${JAR_ABS}" \
+                                -e "deploy_jar_name=${JAR_NAME}"
                         '''
                     }
                 }

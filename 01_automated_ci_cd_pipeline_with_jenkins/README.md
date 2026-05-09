@@ -201,6 +201,10 @@ If **Jenkins** (controller or Maven agent) and **Nexus** run on **different** ma
 
 You can persist a sensible default **`NEXUS_BASE_URL`** in the Jenkins job (**“This project is parameterized”** → defaults) instead of committing your IP into Git.
 
+### Ansible deploy (staging / production)
+
+The **`jenkins-demo-app/Jenkinsfile`** runs **`ansible/playbooks/deploy-jar.yml`** instead of raw **`scp`**. On each Jenkins **executor** that runs the deploy stages, install Ansible (for example **`sudo apt install ansible-core -y`** on Debian/Ubuntu). The playbook copies the built JAR to **`{{ ansible_user_dir }}/<basename of STAGING_REMOTE_JAR or PRODUCTION_REMOTE_JAR>`** (defaults **`~/jenkins-demo-app.jar`** → filename **`jenkins-demo-app.jar`** under the SSH user’s home).
+
 ---
 
 ## References

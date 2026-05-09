@@ -1,0 +1,16 @@
+---
+# Deploy built JAR to target host(s). Invoked from Jenkins with a one-host inventory, e.g.:
+#   ansible-playbook ansible/playbooks/deploy-jar.yml -i "10.0.0.5," -u deploy ...
+# Required extra var: deploy_jar_src (absolute path to the .jar on the Jenkins agent).
+# Optional: deploy_jar_name (filename under remote user home, default jenkins-demo-app.jar).
+- name: Deploy jenkins-demo-app JAR
+  hosts: all
+  gather_facts: true
+  vars:
+    deploy_jar_name: "jenkins-demo-app.jar"
+  tasks:
+    - name: Copy application JAR to target
+      ansible.builtin.copy:
+        src: "{{ deploy_jar_src }}"
+        dest: "{{ ansible_user_dir }}/{{ deploy_jar_name }}"
+        mode: "0644"
