@@ -157,8 +157,55 @@ The **Name** **`SonarQube`** matches the **`SONARQUBE_INSTALLATION`** pipeline p
 
 ---
 
+## Running Nexus Repository Manager (Docker)
+
+Sonatype **Nexus Repository** can host Maven snapshots/releases for CI. Default UI port is **8081** (different from Jenkins **8080**).
+
+On the Docker host, create a data directory owned by **UID/GID 200** so the `nexus` user inside the image can write to the bind mount:
+
+```bash
+sudo mkdir -p /opt/nexus-data && sudo chown -R 200:200 /opt/nexus-data
+```
+
+Start the container:
+
+```bash
+docker run -d -p 8081:8081 --name nexus \
+  -v /opt/nexus-data:/nexus-data \
+  sonatype/nexus3
+```
+
+The first startup can take **one or two minutes** (`docker logs -f nexus` until Nexus reports “started”).
+
+### First login
+
+1. Open **`http://<NEXUS_HOST>:8081`** in a browser (replace **`<NEXUS_HOST>`** with the VM’s IP or DNS name).
+
+2. Read the temporary **admin password** Nexus wrote into the mounted volume:
+
+   ```bash
+   docker exec nexus cat /nexus-data/admin.password
+   ```
+
+3. Sign in as username **`admin`** with that password, then finish the onboarding wizard—Nexus will ask you to set a **new** administrator password.
+
+After Nexus is migrated to your new credentials, Nexus may delete the temporary file; otherwise you can remove it yourself per Sonatype’s docs.
+
+### Jenkins publishes to Nexus on another VM
+
+If **Jenkins** (controller or Maven agent) and **Nexus** run on **different** machines—typical DevOps layouts—do **not** use `http://localhost:8081` as **`NEXUS_BASE_URL`** in **`jenkins-demo-app/Jenkinsfile` → Build parameters**.
+
+1. Set **`NEXUS_BASE_URL`** to **`http://<PRIVATE_IP_OR_DNS_OF_NEXUS_VM>:8081`** (whatever the Jenkins **executor** resolves and can TCP-connect to).
+2. On the **Nexus VM** (or firewall in front): allow inbound **TCP 8081** from the Jenkins/agent subnet (`ufw`, security groups, `iptables`, etc.).
+3. If builds run on ephemeral agents/containers behind NAT, **`localhost`** is only correct when Nexus listens on **that same** network namespace—not when Nexus Docker runs on another host.
+
+You can persist a sensible default **`NEXUS_BASE_URL`** in the Jenkins job (**“This project is parameterized”** → defaults) instead of committing your IP into Git.
+
+---
+
 ## References
 
 - [Jenkins Debian/Ubuntu installation](https://www.jenkins.io/doc/book/installing/linux/#debianubuntu)
 - [Jenkins Debian package repository](https://pkg.jenkins.io/debian-stable/)
 - [SonarQube Server with Docker](https://docs.sonarsource.com/sonarqube-server/latest/setup-and-upgrade/install-the-server/installing-sonarqube-from-docker/)
+- [Sonatype Nexus Repository (Docker Hub)](https://hub.docker.com/r/sonatype/nexus3/)

@@ -9,7 +9,7 @@
     - Code analysis (after compile): mvn -B compile test-compile checkstyle:check spotbugs:check
       (single phase alternative:       mvn -B verify — runs tests + both analyzers.)
     - Package:      mvn -B package [-DskipTests]  → target/jenkins-demo-app-*.jar
-    - Artifact pub: mvn -B deploy  → installs JAR/POM under target/ci-staging-repo/
+    - Artifact pub: mvn -B deploy -s ci-settings.xml  → Nexus maven-snapshots / maven-releases (URLs overridable)
   -->
   <modelVersion>4.0.0</modelVersion>
 
@@ -32,6 +32,8 @@
     <sonar.projectName>jenkins-demo-app</sonar.projectName>
     <sonar.java.source>${maven.compiler.release}</sonar.java.source>
     <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+    <nexus.snapshots.url>http://localhost:8081/repository/maven-snapshots/</nexus.snapshots.url>
+    <nexus.releases.url>http://localhost:8081/repository/maven-releases/</nexus.releases.url>
   </properties>
 
   <dependencies>
@@ -43,13 +45,18 @@
     </dependency>
   </dependencies>
 
-  <!-- File URL so `mvn deploy` works without Nexus/Artifactory (Jenkins publish step demos). -->
+  <!-- Hosted repo IDs must match Jenkins-generated ci-settings.xml <server><id/> entries. -->
   <distributionManagement>
     <snapshotRepository>
-      <id>local-ci-snapshot</id>
-      <name>CI snapshot staging (file)</name>
-      <url>file://${project.build.directory}/ci-staging-repo</url>
+      <id>nexus-snapshots</id>
+      <name>Nexus snapshot repository</name>
+      <url>${nexus.snapshots.url}</url>
     </snapshotRepository>
+    <repository>
+      <id>nexus-releases</id>
+      <name>Nexus release repository</name>
+      <url>${nexus.releases.url}</url>
+    </repository>
   </distributionManagement>
 
   <build>

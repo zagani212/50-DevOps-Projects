@@ -1,21 +1,10 @@
-/* Where to configure what (three different places):
+/*
+ * Nexus publish (often on another VM): set NEXUS_BASE_URL to http(s)://<nexus-vm-or-lb-host>:8081 reachable
+ * from the Jenkins executor—localhost only works when Nexus listens on that same agent.
+ * Jenkins credential kind "Username + password": NEXUS_CREDENTIALS_ID (default nexus-credentials).
+ * Repos: maven-snapshots / maven-releases (hosted).
  *
- *   (1) JENKINS CONTROLLER — only in the Jenkins web UI (Manage Jenkins, job config, credentials):
- *       - Install plugins (e.g. SonarQube Scanner, Credentials Binding).
- *       - Configure System → SonarQube servers: friendly Name (matches SONARQUBE_INSTALLATION default
- *         "SonarQube"), Server URL = http(s)://<sonar-host>:9000, authentication = token from SonarQube.
- *       - Credentials: deploy VM host (Secret text ID) + SSH private key for staging/prod SCP.
- *       - Optional: SonarQube webhook → Jenkins URL (still created in SonarQube UI, but Jenkins must
- *         expose the URL SonarQube can reach).
- *
- *   (2) SONARQUBE HOST (its own machine/VM/container running SonarQube, not Jenkins and not app VMs):
- *       - Create projects / quality gates / rules, generate user tokens Jenkins will use.
- *       - Webhooks: point to Jenkins if you want instant quality-gate feedback (otherwise plugin polls).
- *
- *   (3) APP VMS (staging / production where the JAR is copied over SSH):
- *       - OS user, ~/.ssh/authorized_keys matching Jenkins’ key, writable deploy path, firewall for SSH.
- *
- *   This pipeline fails at waitForQualityGate if the SonarQube quality gate is not OK.
+ * Deploy to staging/prod VMs: enable checkbox parameters; secrets staging-vm-ip, staging-vm-ssh-key, etc.
  */
 pipeline {
     agent any
@@ -36,6 +25,18 @@ pipeline {
             name: 'DEPLOY_TO_PRODUCTION',
             defaultValue: false,
             description: 'Runs production deploy after manual approval (main/master only); needs production-vm-ip + production-vm-ssh-key.'
+        )
+        string(
+            name: 'NEXUS_BASE_URL',
+            defaultValue: '',
+            trim: true,
+            description: 'Required unless set as job default: Nexus base URL, e.g. http://203.0.113.50:8081 — must be reachable from Jenkins agents when Nexus runs on another VM (not localhost in that layout). No trailing slash.'
+        )
+        string(
+            name: 'NEXUS_CREDENTIALS_ID',
+            defaultValue: 'nexus-credentials',
+            trim: true,
+            description: 'Jenkins "Username with password" credential ID for Nexus deploy.'
         )
     }
 
@@ -105,12 +106,49 @@ pipeline {
 
         stage('Artifact Publish') {
             steps {
-                dir(env.APP_DIR) {
-                    sh 'mvn -B deploy'
-                    archiveArtifacts artifacts: 'target/*.jar,target/ci-staging-repo/**',
-                        excludes: '**/*-sources.jar',
-                        fingerprint: true,
-                        allowEmptyArchive: false
+                script {
+                    def nexusBase = params.NEXUS_BASE_URL?.trim()
+                    if (!nexusBase) {
+                        error 'Set pipeline parameter NEXUS_BASE_URL to your Nexus VM (e.g. http://10.0.0.15:8081). Jenkins must reach Nexus on TCP 8081 from this agent—not localhost unless Nexus shares that host.'
+                    }
+                    nexusBase = nexusBase.replaceAll(/\/+$/, '')
+                    withCredentials([usernamePassword(
+                        credentialsId: params.NEXUS_CREDENTIALS_ID,
+                        usernameVariable: 'NEXUS_USER',
+                        passwordVariable: 'NEXUS_PASSWORD'
+                    )]) {
+                        dir(env.APP_DIR) {
+                            def snapshotsRepoUrl = "${nexusBase}/repository/maven-snapshots/"
+                            def releasesRepoUrl = "${nexusBase}/repository/maven-releases/"
+                            def settingsXml = """<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+  <servers>
+    <server>
+      <id>nexus-snapshots</id>
+      <username>${env.NEXUS_USER}</username>
+      <password>${env.NEXUS_PASSWORD}</password>
+    </server>
+    <server>
+      <id>nexus-releases</id>
+      <username>${env.NEXUS_USER}</username>
+      <password>${env.NEXUS_PASSWORD}</password>
+    </server>
+  </servers>
+</settings>"""
+                            writeFile file: 'ci-settings.xml', encoding: 'UTF-8', text: settingsXml
+                            sh """
+                                mvn -B deploy -s ci-settings.xml \\
+                                    '-Dnexus.snapshots.url=${snapshotsRepoUrl}' \\
+                                    '-Dnexus.releases.url=${releasesRepoUrl}'
+                            """
+                            archiveArtifacts artifacts: 'target/*.jar',
+                                excludes: '**/*-sources.jar',
+                                fingerprint: true,
+                                allowEmptyArchive: false
+                        }
+                    }
                 }
             }
         }
@@ -187,6 +225,9 @@ pipeline {
     }
 
     post {
+        always {
+            sh "rm -f \"${WORKSPACE}/${env.APP_DIR}/ci-settings.xml\" 2>/dev/null || true"
+        }
         success {
             echo 'Pipeline completed successfully.'
         }
