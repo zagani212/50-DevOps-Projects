@@ -205,7 +205,7 @@ You can persist a sensible default **`NEXUS_BASE_URL`** in the Jenkins job (**�
 
 The **`jenkins-demo-app/Jenkinsfile`** runs **`ansible/playbooks/deploy-jar.yml`** instead of raw **`scp`**. On each Jenkins **executor** that runs the deploy stages, install Ansible (for example **`sudo apt install ansible-core -y`** on Debian/Ubuntu). The playbook copies the built JAR to **`{{ ansible_user_dir }}/<basename of STAGING_REMOTE_JAR or PRODUCTION_REMOTE_JAR>`** (defaults **`~/jenkins-demo-app.jar`** → filename **`jenkins-demo-app.jar`** under the SSH user’s home).
 
-Production also runs a **`Production approval (manual)`** stage: the build pauses until an authorized user clicks **Approve** in the Jenkins UI (24-hour timeout); the next stage logs who approved, then runs Ansible.
+**Staging** Ansible deploy runs on **every** successful pipeline (after artifact publish). **Production** runs only on branches **`main`** or **`master`**: first a **`Production approval (manual)`** stage pauses until someone clicks **Approve** in the Jenkins UI (24-hour timeout), then the deploy stage logs who approved and runs Ansible.
 
 ---
 

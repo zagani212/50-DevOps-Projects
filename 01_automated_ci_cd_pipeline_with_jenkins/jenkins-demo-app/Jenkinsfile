@@ -17,16 +17,6 @@ pipeline {
             trim: true,
             description: 'Exact Name of the SonarQube server entry in Jenkins global configuration.'
         )
-        booleanParam(
-            name: 'DEPLOY_TO_STAGING',
-            defaultValue: false,
-            description: 'Runs ansible/playbooks/deploy-jar.yml against staging (staging-vm-ip + staging-vm-ssh-key).'
-        )
-        booleanParam(
-            name: 'DEPLOY_TO_PRODUCTION',
-            defaultValue: false,
-            description: 'Production (main/master): pauses for manual approval stage, then Ansible deploy; needs production-vm-ip + production-vm-ssh-key.'
-        )
         string(
             name: 'NEXUS_BASE_URL',
             defaultValue: '',
@@ -155,9 +145,6 @@ pipeline {
         }
 
         stage('Deploy to Staging') {
-            when {
-                expression { return params.DEPLOY_TO_STAGING }
-            }
             steps {
                 withCredentials([
                     string(credentialsId: 'staging-vm-ip', variable: 'STAGING_VM_IP'),
@@ -200,12 +187,9 @@ pipeline {
 
         stage('Production approval (manual)') {
             when {
-                allOf {
-                    anyOf {
-                        branch 'main'
-                        branch 'master'
-                    }
-                    expression { return params.DEPLOY_TO_PRODUCTION }
+                anyOf {
+                    branch 'main'
+                    branch 'master'
                 }
             }
             steps {
@@ -223,12 +207,9 @@ pipeline {
 
         stage('Deploy to Production') {
             when {
-                allOf {
-                    anyOf {
-                        branch 'main'
-                        branch 'master'
-                    }
-                    expression { return params.DEPLOY_TO_PRODUCTION }
+                anyOf {
+                    branch 'main'
+                    branch 'master'
                 }
             }
             steps {
