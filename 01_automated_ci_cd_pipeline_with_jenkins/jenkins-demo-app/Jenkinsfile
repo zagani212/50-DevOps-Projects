@@ -25,7 +25,7 @@ pipeline {
         booleanParam(
             name: 'DEPLOY_TO_PRODUCTION',
             defaultValue: false,
-            description: 'Runs deploy playbook to production after approval (main/master); production-vm-ip + production-vm-ssh-key.'
+            description: 'Production (main/master): pauses for manual approval stage, then Ansible deploy; needs production-vm-ip + production-vm-ssh-key.'
         )
         string(
             name: 'NEXUS_BASE_URL',
@@ -198,6 +198,29 @@ pipeline {
             }
         }
 
+        stage('Production approval (manual)') {
+            when {
+                allOf {
+                    anyOf {
+                        branch 'main'
+                        branch 'master'
+                    }
+                    expression { return params.DEPLOY_TO_PRODUCTION }
+                }
+            }
+            steps {
+                timeout(time: 24, unit: 'HOURS') {
+                    input(
+                        id: 'production-deploy-approval',
+                        message: 'Manual approval required before production deploy.\n' +
+                            'Confirm staging/integration checks are done, then approve to run Ansible against the production VM.',
+                        ok: 'Approve and deploy to production',
+                        submitterParameter: 'PROD_DEPLOY_APPROVER'
+                    )
+                }
+            }
+        }
+
         stage('Deploy to Production') {
             when {
                 allOf {
@@ -209,7 +232,10 @@ pipeline {
                 }
             }
             steps {
-                input message: 'Approve production deployment?', ok: 'Deploy'
+                script {
+                    def who = env.PROD_DEPLOY_APPROVER ?: '(unknown)'
+                    echo "Production deploy approved by: ${who}"
+                }
                 withCredentials([
                     string(credentialsId: 'production-vm-ip', variable: 'PRODUCTION_VM_IP'),
                     sshUserPrivateKey(
