@@ -6,6 +6,8 @@
  *
  * Deploy to staging/prod: Ansible (ansible-playbook). Agent must have ansible-core installed.
  * Playbook: ansible/playbooks/deploy-jar.yml — same credentials as before (staging-vm-ip + staging-vm-ssh-key).
+ *
+ * Production: runs on every branch after integration test; manual input gate still required before Ansible.
  */
 pipeline {
     agent any
@@ -186,12 +188,6 @@ pipeline {
         }
 
         stage('Production approval (manual)') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
-                }
-            }
             steps {
                 timeout(time: 24, unit: 'HOURS') {
                     input(
@@ -206,12 +202,6 @@ pipeline {
         }
 
         stage('Deploy to Production') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
-                }
-            }
             steps {
                 script {
                     def who = env.PROD_DEPLOY_APPROVER ?: '(unknown)'
