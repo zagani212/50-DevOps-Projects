@@ -1,3 +1,79 @@
+import groovy.json.JsonOutput
+
+/** String params from Jenkins may be String or hudson.util.Secret — never call .trim() on the raw param. */
+String paramToStringTrim(def p) {
+    if (p == null) {
+        return ''
+    }
+    if (p instanceof CharSequence) {
+        return p.toString().trim()
+    }
+    try {
+        return p.getPlainText().toString().trim()
+    } catch (Throwable ignored) {
+        return p.toString().trim()
+    }
+}
+
+/* Post JSON to Slack Incoming Webhook (Secret text credential = full https://hooks.slack.com/... URL).
+ * Leave credId empty to skip. Optional channel overrides webhook default (#channel or @user). */
+void sendSlack(def credIdRaw, def channelOverrideRaw, Map slackPayload) {
+    def credId = paramToStringTrim(credIdRaw)
+    if (!credId) {
+        return
+    }
+    def channelOverride = paramToStringTrim(channelOverrideRaw)
+    if (channelOverride) {
+        slackPayload.channel = channelOverride
+    }
+    def body = JsonOutput.toJson(slackPayload)
+    def payloadFile = ".slack-payload-${env.BUILD_TAG}.json"
+    writeFile file: payloadFile, text: body, encoding: 'UTF-8'
+    try {
+        withCredentials([string(credentialsId: credId, variable: 'SLACK_WEBHOOK_URL')]) {
+            if (isUnix()) {
+                sh """
+                    set +x
+                    curl -sS -X POST -H 'Content-Type: application/json' \\
+                      --data @${payloadFile} "\$SLACK_WEBHOOK_URL" || true
+                """
+            } else {
+                bat """
+                    curl -sS -X POST -H "Content-Type: application/json" ^
+                      --data @${payloadFile} %SLACK_WEBHOOK_URL%
+                """
+            }
+        }
+    } catch (ignored) {
+        echo 'Slack notification skipped (credential missing or curl failed).'
+    } finally {
+        if (isUnix()) {
+            sh "rm -f '${payloadFile}' 2>/dev/null || true"
+        } else {
+            bat "if exist \"${payloadFile}\" del /f /q \"${payloadFile}\""
+        }
+    }
+}
+
+void sendSlackText(def credId, def channelOverride, String text, String attachmentColor) {
+    if (attachmentColor) {
+        sendSlack(credId, channelOverride, [
+            attachments: [[
+                color: attachmentColor,
+                text : text,
+                mrkdwn_in: ['text']
+            ]]
+        ])
+    } else {
+        sendSlack(credId, channelOverride, [text: text])
+    }
+}
+
+String slackJobSummary() {
+    def br = env.BRANCH_NAME ?: env.GIT_BRANCH ?: '(unknown)'
+    return "*${env.JOB_NAME}* #${env.BUILD_NUMBER} — branch `${br}`\n${env.RUN_DISPLAY_URL}"
+}
+
 /*
  * Nexus publish (often on another VM): set NEXUS_BASE_URL to http(s)://<nexus-vm-or-lb-host>:8081 reachable
  * from the Jenkins executor—localhost only works when Nexus listens on that same agent.
@@ -8,6 +84,8 @@
  * Playbook: ansible/playbooks/deploy-jar.yml — same credentials as before (staging-vm-ip + staging-vm-ssh-key).
  *
  * Production: runs on every branch after integration test; manual input gate still required before Ansible.
+ *
+ * Slack: Secret text credential = Incoming Webhook URL. Parameter SLACK_WEBHOOK_CREDENTIAL_ID empty = off.
  */
 pipeline {
     agent any
@@ -30,6 +108,18 @@ pipeline {
             defaultValue: 'nexus-credentials',
             trim: true,
             description: 'Jenkins "Username with password" credential ID for Nexus deploy.'
+        )
+        string(
+            name: 'SLACK_WEBHOOK_CREDENTIAL_ID',
+            defaultValue: 'slack-incoming-webhook',
+            trim: true,
+            description: 'Secret text credential ID whose value is the full Slack Incoming Webhook URL; leave empty to disable Slack.'
+        )
+        string(
+            name: 'SLACK_CHANNEL',
+            defaultValue: '#tous-abdelhak',
+            trim: true,
+            description: 'Optional Slack channel (#builds) or @user id to override the webhook default.'
         )
     }
 
@@ -81,7 +171,7 @@ pipeline {
 
         stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv("${params.SONARQUBE_INSTALLATION}") {
+                withSonarQubeEnv(paramToStringTrim(params.SONARQUBE_INSTALLATION)) {
                     dir(env.APP_DIR) {
                         sh 'mvn -B sonar:sonar'
                     }
@@ -100,13 +190,13 @@ pipeline {
         stage('Artifact Publish') {
             steps {
                 script {
-                    def nexusBase = params.NEXUS_BASE_URL?.trim()
+                    def nexusBase = paramToStringTrim(params.NEXUS_BASE_URL)
                     if (!nexusBase) {
                         error 'Set pipeline parameter NEXUS_BASE_URL to your Nexus VM (e.g. http://10.0.0.15:8081). Jenkins must reach Nexus on TCP 8081 from this agent—not localhost unless Nexus shares that host.'
                     }
                     nexusBase = nexusBase.replaceAll(/\/+$/, '')
                     withCredentials([usernamePassword(
-                        credentialsId: params.NEXUS_CREDENTIALS_ID,
+                        credentialsId: paramToStringTrim(params.NEXUS_CREDENTIALS_ID),
                         usernameVariable: 'NEXUS_USER',
                         passwordVariable: 'NEXUS_PASSWORD'
                     )]) {
@@ -189,6 +279,12 @@ pipeline {
 
         stage('Production approval (manual)') {
             steps {
+                script {
+                    def cred = paramToStringTrim(params.SLACK_WEBHOOK_CREDENTIAL_ID)
+                    def ch = paramToStringTrim(params.SLACK_CHANNEL)
+                    def msg = ":hourglass_flowing_sand: *Awaiting manual production approval*\n${slackJobSummary()}\nOpen the build in Jenkins and approve *Production approval* to continue."
+                    sendSlackText(cred, ch, msg, 'warning')
+                }
                 timeout(time: 24, unit: 'HOURS') {
                     input(
                         id: 'production-deploy-approval',
@@ -241,10 +337,38 @@ pipeline {
             sh "rm -f \"${WORKSPACE}/${env.APP_DIR}/ci-settings.xml\" 2>/dev/null || true"
         }
         success {
+            script {
+                def cred = paramToStringTrim(params.SLACK_WEBHOOK_CREDENTIAL_ID)
+                def ch = paramToStringTrim(params.SLACK_CHANNEL)
+                def msg = ":white_check_mark: *Pipeline SUCCESS*\n${slackJobSummary()}"
+                sendSlackText(cred, ch, msg, 'good')
+            }
             echo 'Pipeline completed successfully.'
         }
         failure {
+            script {
+                def cred = paramToStringTrim(params.SLACK_WEBHOOK_CREDENTIAL_ID)
+                def ch = paramToStringTrim(params.SLACK_CHANNEL)
+                def msg = ":x: *Pipeline FAILURE*\n${slackJobSummary()}"
+                sendSlackText(cred, ch, msg, 'danger')
+            }
             echo 'Pipeline failed.'
+        }
+        aborted {
+            script {
+                def cred = paramToStringTrim(params.SLACK_WEBHOOK_CREDENTIAL_ID)
+                def ch = paramToStringTrim(params.SLACK_CHANNEL)
+                def msg = ":black_square_for_stop: *Pipeline ABORTED* (e.g. input declined or stopped)\n${slackJobSummary()}"
+                sendSlackText(cred, ch, msg, '#9E9E9E')
+            }
+        }
+        unstable {
+            script {
+                def cred = paramToStringTrim(params.SLACK_WEBHOOK_CREDENTIAL_ID)
+                def ch = paramToStringTrim(params.SLACK_CHANNEL)
+                def msg = ":warning: *Pipeline UNSTABLE*\n${slackJobSummary()}"
+                sendSlackText(cred, ch, msg, 'warning')
+            }
         }
     }
 }

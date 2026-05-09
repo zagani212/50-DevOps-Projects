@@ -207,6 +207,27 @@ The **`jenkins-demo-app/Jenkinsfile`** runs **`ansible/playbooks/deploy-jar.yml`
 
 **Staging** Ansible deploy runs on **every** successful pipeline (after artifact publish). **Production** also runs on **any** branch after integration tests: the pipeline pauses for **manual approval**, then runs Ansible to the production VM—use **`input` submitter** restrictions in Jenkins if you need branch- or role-based control.
 
+### Slack notifications (`jenkins-demo-app/Jenkinsfile`)
+
+The pipeline can post to Slack with an **Incoming Webhook** (no Slack plugin required; the agent needs **`curl`**).
+
+1. In Slack: **App** → **Incoming Webhooks** → add a webhook, pick a default channel, copy the **Webhook URL**.
+2. In Jenkins: **Credentials** → **Secret text** → paste the full URL as the secret → choose an **ID** (for example **`slack-incoming-webhook`**).
+3. In the job **Build with Parameters**, set **`SLACK_WEBHOOK_CREDENTIAL_ID`** to that credential ID (or save it as the job default). Leave it **empty** to turn Slack off.
+4. Optional **`SLACK_CHANNEL`**: set **`#other-channel`** (or a user id) to override the webhook’s default channel.
+
+Notifications:
+
+| When | Message |
+|------|---------|
+| **Manual production approval** | Sent when the build reaches **Production approval** (before **`input`**), with build link and branch. |
+| **Success** | After the full pipeline completes green (`post { success }`). |
+| **Failure** | Any failing stage (`post { failure }`). |
+| **Aborted** | Stopped run or declined **`input`** (`post { aborted }`). |
+| **Unstable** | Unstable result (`post { unstable }`). |
+
+If Jenkins **In-process Script Approval** prompts for **`JsonOutput`** or the helper methods, approve the signatures once.
+
 ---
 
 ## References
@@ -215,3 +236,4 @@ The **`jenkins-demo-app/Jenkinsfile`** runs **`ansible/playbooks/deploy-jar.yml`
 - [Jenkins Debian package repository](https://pkg.jenkins.io/debian-stable/)
 - [SonarQube Server with Docker](https://docs.sonarsource.com/sonarqube-server/latest/setup-and-upgrade/install-the-server/installing-sonarqube-from-docker/)
 - [Sonatype Nexus Repository (Docker Hub)](https://hub.docker.com/r/sonatype/nexus3/)
+- [Slack Incoming Webhooks](https://api.slack.com/messaging/webhooks)
