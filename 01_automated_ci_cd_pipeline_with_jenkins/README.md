@@ -92,7 +92,32 @@ If you cannot reach port 8080 from another host, configure a firewall (for examp
 
 ---
 
+## Running SonarQube (Docker)
+
+The **`jenkins-demo-app/Jenkinsfile`** runs **SonarQube analysis** and **waits for the quality gate**. You need a SonarQube server reachable from your Jenkins agent; here it is started as a **Docker** container on the same machine or another host.
+
+### Start the server
+
+```bash
+docker run -d --name sonarqube -p 9000:9000 sonarqube:lts-community
+```
+
+- **Web UI:** `http://localhost:9000` (or `http://<docker-host-ip>:9000` from another machine).
+- **First login:** SonarQube ships with default credentials **`admin` / `admin`** and will prompt you to change the password.
+- **Jenkins:** In **Manage Jenkins → Configure System → SonarQube servers**, set **Server URL** to that same base URL (for example `http://<sonar-host>:9000`) and add a **token** from SonarQube (**User → My Account → Security** → Generate Token). The server **Name** there must match the **`SONARQUBE_INSTALLATION`** parameter in the pipeline (default **`SonarQube`**).
+
+If the container exits or logs show Elasticsearch bootstrap errors on **Linux**, increase the host limit (SonarQube’s embedded search layer often needs this):
+
+```bash
+sudo sysctl -w vm.max_map_count=262144
+```
+
+To remove and recreate the container later: `docker stop sonarqube && docker rm sonarqube` before running `docker run` again (or use `docker rename` / volume mounts only if you need to persist data).
+
+---
+
 ## References
 
 - [Jenkins Debian/Ubuntu installation](https://www.jenkins.io/doc/book/installing/linux/#debianubuntu)
 - [Jenkins Debian package repository](https://pkg.jenkins.io/debian-stable/)
+- [SonarQube Server with Docker](https://docs.sonarsource.com/sonarqube-server/latest/setup-and-upgrade/install-the-server/installing-sonarqube-from-docker/)

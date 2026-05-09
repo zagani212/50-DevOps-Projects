@@ -1,13 +1,32 @@
-/* Jenkins credential IDs (Kinds must match the bindings below):
- *   Secret text:              staging-vm-ip, production-vm-ip
- *   SSH Username + private key (not "secret file"):  staging-vm-ssh-key, production-vm-ssh-key
+/* Where to configure what (three different places):
  *
- * Deploy stages run only when the corresponding checkbox is enabled in "Build With Parameters".
+ *   (1) JENKINS CONTROLLER — only in the Jenkins web UI (Manage Jenkins, job config, credentials):
+ *       - Install plugins (e.g. SonarQube Scanner, Credentials Binding).
+ *       - Configure System → SonarQube servers: friendly Name (matches SONARQUBE_INSTALLATION default
+ *         "SonarQube"), Server URL = http(s)://<sonar-host>:9000, authentication = token from SonarQube.
+ *       - Credentials: deploy VM host (Secret text ID) + SSH private key for staging/prod SCP.
+ *       - Optional: SonarQube webhook → Jenkins URL (still created in SonarQube UI, but Jenkins must
+ *         expose the URL SonarQube can reach).
+ *
+ *   (2) SONARQUBE HOST (its own machine/VM/container running SonarQube, not Jenkins and not app VMs):
+ *       - Create projects / quality gates / rules, generate user tokens Jenkins will use.
+ *       - Webhooks: point to Jenkins if you want instant quality-gate feedback (otherwise plugin polls).
+ *
+ *   (3) APP VMS (staging / production where the JAR is copied over SSH):
+ *       - OS user, ~/.ssh/authorized_keys matching Jenkins’ key, writable deploy path, firewall for SSH.
+ *
+ *   This pipeline fails at waitForQualityGate if the SonarQube quality gate is not OK.
  */
 pipeline {
     agent any
 
     parameters {
+        string(
+            name: 'SONARQUBE_INSTALLATION',
+            defaultValue: 'SonarQube',
+            trim: true,
+            description: 'Exact Name of the SonarQube server entry in Jenkins global configuration.'
+        )
         booleanParam(
             name: 'DEPLOY_TO_STAGING',
             defaultValue: false,
@@ -62,6 +81,24 @@ pipeline {
             steps {
                 dir(env.APP_DIR) {
                     sh 'mvn -B compile test-compile checkstyle:check spotbugs:check'
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv("${params.SONARQUBE_INSTALLATION}") {
+                    dir(env.APP_DIR) {
+                        sh 'mvn -B sonar:sonar'
+                    }
+                }
+            }
+        }
+
+        stage('SonarQube Quality Gate') {
+            steps {
+                timeout(time: 15, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
                 }
             }
         }
