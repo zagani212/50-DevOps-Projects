@@ -1,7 +1,7 @@
 import groovy.json.JsonOutput
 
 /** String params from Jenkins may be String or hudson.util.Secret — never call .trim() on the raw param. */
-String paramToStringTrim(def p) {
+String paramToStringTrim(def p) { 
     if (p == null) {
         return ''
     }
