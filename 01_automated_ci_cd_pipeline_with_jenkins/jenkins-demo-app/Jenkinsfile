@@ -74,6 +74,16 @@ String slackJobSummary() {
     return "*${env.JOB_NAME}* #${env.BUILD_NUMBER} — branch `${br}`\n${env.RUN_DISPLAY_URL}"
 }
 
+/** true when this build targets main/master (merged release line)—production deploy runs here only. */
+boolean isReleaseProdBranch() {
+    def br = paramToStringTrim(env.BRANCH_NAME)
+    if (br in ['main', 'master']) {
+        return true
+    }
+    def gitBr = paramToStringTrim(env.GIT_BRANCH)
+    return gitBr in ['origin/main', 'origin/master', 'refs/heads/main', 'refs/heads/master']
+}
+
 /*
  * Nexus publish (often on another VM): set NEXUS_BASE_URL to http(s)://<nexus-vm-or-lb-host>:8081 reachable
  * from the Jenkins executor—localhost only works when Nexus listens on that same agent.
@@ -81,11 +91,10 @@ String slackJobSummary() {
  * Repos: maven-snapshots / maven-releases (hosted).
  *
  * Deploy to staging/prod: Ansible (ansible-playbook). Agent must have ansible-core installed.
- * Playbook: ansible/playbooks/deploy-jar.yml — same credentials as before (staging-vm-ip + staging-vm-ssh-key).
+ * Flow: Feature branches → full CI through staging + integration (no prod). main/master after merge →
+ * same CI but skips staging/integration, then manual approval + production Ansible (uses fresh build on main).
  *
- * Production: runs on every branch after integration test; manual input gate still required before Ansible.
- *
- * Slack: Secret text credential = Incoming Webhook URL. Parameter SLACK_WEBHOOK_CREDENTIAL_ID empty = off.
+ * Slack: Incoming Webhook via SLACK_WEBHOOK_CREDENTIAL_ID (Secret text Jenkins credential whose value is URL).
  */
 pipeline {
     agent any
@@ -237,6 +246,9 @@ pipeline {
         }
 
         stage('Deploy to Staging') {
+            when {
+                expression { return !isReleaseProdBranch() }
+            }
             steps {
                 withCredentials([
                     string(credentialsId: 'staging-vm-ip', variable: 'STAGING_VM_IP'),
@@ -267,6 +279,9 @@ pipeline {
         }
 
         stage('Integration Test') {
+            when {
+                expression { return !isReleaseProdBranch() }
+            }
             steps {
                 dir(env.APP_DIR) {
                     sh '''
@@ -278,6 +293,9 @@ pipeline {
         }
 
         stage('Production approval (manual)') {
+            when {
+                expression { return isReleaseProdBranch() }
+            }
             steps {
                 script {
                     def cred = paramToStringTrim(params.SLACK_WEBHOOK_CREDENTIAL_ID)
@@ -288,8 +306,8 @@ pipeline {
                 timeout(time: 24, unit: 'HOURS') {
                     input(
                         id: 'production-deploy-approval',
-                        message: 'Manual approval required before production deploy.\n' +
-                            'Confirm staging/integration checks are done, then approve to run Ansible against the production VM.',
+                        message: 'Manual approval — production deploy on main/master.\n' +
+                            'Merge to main should occur only after a green CI run on your feature branch. Approve to run Ansible.',
                         ok: 'Approve and deploy to production',
                         submitterParameter: 'PROD_DEPLOY_APPROVER'
                     )
@@ -298,6 +316,9 @@ pipeline {
         }
 
         stage('Deploy to Production') {
+            when {
+                expression { return isReleaseProdBranch() }
+            }
             steps {
                 script {
                     def who = env.PROD_DEPLOY_APPROVER ?: '(unknown)'
