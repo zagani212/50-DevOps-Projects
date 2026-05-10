@@ -155,18 +155,6 @@ pipeline {
             }
         }
 
-        stage('Set GitHub Status') {
-            steps {
-                // This manually tells GitHub "I am running" 
-                // Replace 'Jenkins CI' with whatever name you want to see in the search box
-                updateGithubCommitStatus(
-                    context: 'continuous-integration/jenkins', 
-                    state: 'PENDING', 
-                    message: 'Build is in progress...'
-                )
-            }
-        }
-
         stage('Build') {
             steps {
                 dir(env.APP_DIR) {
