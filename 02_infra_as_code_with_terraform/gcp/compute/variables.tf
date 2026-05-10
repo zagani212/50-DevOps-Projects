@@ -1,23 +1,23 @@
 variable "public_subnetwork_name_az1" {
-    type = string
+  type = string
 }
 
 variable "public_subnetwork_name_az2" {
-    type = string
+  type = string
 }
 
 variable "private_subnetwork_name_az1" {
-    type = string
+  type = string
 }
 
 variable "private_subnetwork_name_az2" {
-    type = string
+  type = string
 }
 
 variable "zone_az1" {
-    type = string
+  type = string
 }
 
 variable "zone_az2" {
-    type = string
+  type = string
 }

@@ -6,7 +6,9 @@ resource "google_service_account" "default" {
 resource "google_compute_instance" "vm_public_az1" {
   name         = "vm-${var.public_subnetwork_name_az1}"
   machine_type = "e2-medium"
-  zone = var.zone_az1
+  zone         = var.zone_az1
+
+  tags = ["vm"]
 
   boot_disk {
     initialize_params {
@@ -29,7 +31,7 @@ resource "google_compute_instance" "vm_public_az1" {
 resource "google_compute_instance" "vm_public_az2" {
   name         = "vm-${var.public_subnetwork_name_az2}"
   machine_type = "e2-medium"
-  zone = var.zone_az2
+  zone         = var.zone_az2
 
   boot_disk {
     initialize_params {
@@ -52,7 +54,7 @@ resource "google_compute_instance" "vm_public_az2" {
 resource "google_compute_instance" "vm_private_az1" {
   name         = "vm-${var.private_subnetwork_name_az1}"
   machine_type = "e2-medium"
-  zone = var.zone_az1
+  zone         = var.zone_az1
 
   boot_disk {
     initialize_params {
@@ -74,7 +76,7 @@ resource "google_compute_instance" "vm_private_az1" {
 resource "google_compute_instance" "vm_private_az2" {
   name         = "vm-${var.private_subnetwork_name_az2}"
   machine_type = "e2-medium"
-  zone = var.zone_az2
+  zone         = var.zone_az2
 
   boot_disk {
     initialize_params {

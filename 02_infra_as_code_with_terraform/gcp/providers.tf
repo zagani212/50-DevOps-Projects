@@ -1,11 +1,11 @@
 provider "google" {
-  project     = var.project_id
-  region      = var.region
+  project = var.project_id
+  region  = var.region
 }
 
 terraform {
   backend "gcs" {
-    bucket  = "terraform_state_bucket_abdelhak"
-    prefix  = "terraform/state"
+    bucket = "terraform_state_bucket_abdelhak"
+    prefix = "terraform/state"
   }
 }
