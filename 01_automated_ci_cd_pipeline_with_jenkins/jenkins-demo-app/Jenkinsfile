@@ -85,9 +85,8 @@ boolean isReleaseProdBranch() {
 }
 
 /*
- * Nexus publish (often on another VM): set NEXUS_BASE_URL to http(s)://<nexus-vm-or-lb-host>:8081 reachable
- * from the Jenkins executor—localhost only works when Nexus listens on that same agent.
- * Jenkins credential kind "Username + password": NEXUS_CREDENTIALS_ID (default nexus-credentials).
+ * Nexus publish: NEXUS_BASE_URL_CREDENTIAL_ID points to Secret text whose secret is the base URL (e.g. http://10.0.1.5:8081).
+ * Jenkins credential "Username + password": NEXUS_CREDENTIALS_ID (default nexus-credentials).
  * Repos: maven-snapshots / maven-releases (hosted).
  *
  * Deploy to staging/prod: Ansible (ansible-playbook). Agent must have ansible-core installed.
@@ -107,10 +106,10 @@ pipeline {
             description: 'Exact Name of the SonarQube server entry in Jenkins global configuration.'
         )
         string(
-            name: 'NEXUS_BASE_URL',
-            defaultValue: '',
+            name: 'NEXUS_BASE_URL_CREDENTIAL_ID',
+            defaultValue: 'nexus-base-url',
             trim: true,
-            description: 'Required unless set as job default: Nexus base URL, e.g. http://203.0.113.50:8081 — must be reachable from Jenkins agents when Nexus runs on another VM (not localhost in that layout). No trailing slash.'
+            description: 'Jenkins Secret text credential ID: secret value must be Nexus base URL only (e.g. http://10.0.1.5:8081), no trailing slash. Create Credentials → Secret text with that ID.'
         )
         string(
             name: 'NEXUS_CREDENTIALS_ID',
@@ -199,16 +198,23 @@ pipeline {
         stage('Artifact Publish') {
             steps {
                 script {
-                    def nexusBase = paramToStringTrim(params.NEXUS_BASE_URL)
-                    if (!nexusBase) {
-                        error 'Set pipeline parameter NEXUS_BASE_URL to your Nexus VM (e.g. http://10.0.0.15:8081). Jenkins must reach Nexus on TCP 8081 from this agent—not localhost unless Nexus shares that host.'
+                    def urlCredId = paramToStringTrim(params.NEXUS_BASE_URL_CREDENTIAL_ID)
+                    if (!urlCredId) {
+                        error 'Set pipeline parameter NEXUS_BASE_URL_CREDENTIAL_ID to a Jenkins Secret text credential ID whose secret is the Nexus base URL (e.g. http://10.0.0.15:8081).'
                     }
-                    nexusBase = nexusBase.replaceAll(/\/+$/, '')
-                    withCredentials([usernamePassword(
-                        credentialsId: paramToStringTrim(params.NEXUS_CREDENTIALS_ID),
-                        usernameVariable: 'NEXUS_USER',
-                        passwordVariable: 'NEXUS_PASSWORD'
-                    )]) {
+                    withCredentials([
+                        string(credentialsId: urlCredId, variable: 'NEXUS_BASE_URL_SECRET'),
+                        usernamePassword(
+                            credentialsId: paramToStringTrim(params.NEXUS_CREDENTIALS_ID),
+                            usernameVariable: 'NEXUS_USER',
+                            passwordVariable: 'NEXUS_PASSWORD'
+                        )
+                    ]) {
+                        def nexusBase = paramToStringTrim(env.NEXUS_BASE_URL_SECRET)
+                        if (!nexusBase) {
+                            error 'Secret text credential for Nexus URL is empty. Store http(s)://host:8081 as the secret.'
+                        }
+                        nexusBase = nexusBase.replaceAll(/\/+$/, '')
                         dir(env.APP_DIR) {
                             def snapshotsRepoUrl = "${nexusBase}/repository/maven-snapshots/"
                             def releasesRepoUrl = "${nexusBase}/repository/maven-releases/"

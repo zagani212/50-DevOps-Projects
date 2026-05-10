@@ -193,13 +193,13 @@ After Nexus is migrated to your new credentials, Nexus may delete the temporary 
 
 ### Jenkins publishes to Nexus on another VM
 
-If **Jenkins** (controller or Maven agent) and **Nexus** run on **different** machines—typical DevOps layouts—do **not** use `http://localhost:8081` as **`NEXUS_BASE_URL`** in **`jenkins-demo-app/Jenkinsfile` → Build parameters**.
+If **Jenkins** and **Nexus** are on different hosts, the base URL must be reachable from the **executor** (not `localhost` unless Nexus is on that same host).
 
-1. Set **`NEXUS_BASE_URL`** to **`http://<PRIVATE_IP_OR_DNS_OF_NEXUS_VM>:8081`** (whatever the Jenkins **executor** resolves and can TCP-connect to).
-2. On the **Nexus VM** (or firewall in front): allow inbound **TCP 8081** from the Jenkins/agent subnet (`ufw`, security groups, `iptables`, etc.).
-3. If builds run on ephemeral agents/containers behind NAT, **`localhost`** is only correct when Nexus listens on **that same** network namespace—not when Nexus Docker runs on another host.
+1. In Jenkins: **Credentials** → **Add credentials** → **Secret text**. **Secret** = **`http://<PRIVATE_IP_OR_DNS_OF_NEXUS_VM>:8081`** (no trailing slash). **ID** = e.g. **`nexus-base-url`** (must match pipeline parameter **`NEXUS_BASE_URL_CREDENTIAL_ID`** default or your override).
+2. On the **Nexus VM** (or firewall): allow inbound **TCP 8081** from the Jenkins/agent subnet.
+3. Job parameter **`NEXUS_BASE_URL_CREDENTIAL_ID`** references that credential’s **ID** (not the URL itself—the URL stays only in the credential).
 
-You can persist a sensible default **`NEXUS_BASE_URL`** in the Jenkins job (**“This project is parameterized”** → defaults) instead of committing your IP into Git.
+You can set a job default for **`NEXUS_BASE_URL_CREDENTIAL_ID`** so the URL never appears in build parameters.
 
 ### Ansible deploy (staging / production)
 
