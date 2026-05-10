@@ -205,7 +205,14 @@ You can persist a sensible default **`NEXUS_BASE_URL`** in the Jenkins job (**�
 
 The **`jenkins-demo-app/Jenkinsfile`** runs **`ansible/playbooks/deploy-jar.yml`** instead of raw **`scp`**. On each Jenkins **executor** that runs the deploy stages, install Ansible (for example **`sudo apt install ansible-core -y`** on Debian/Ubuntu). The playbook copies the built JAR to **`{{ ansible_user_dir }}/<basename of STAGING_REMOTE_JAR or PRODUCTION_REMOTE_JAR>`** (defaults **`~/jenkins-demo-app.jar`** → filename **`jenkins-demo-app.jar`** under the SSH user’s home).
 
-**Staging** Ansible deploy runs on **every** successful pipeline (after artifact publish). **Production** also runs on **any** branch after integration tests: the pipeline pauses for **manual approval**, then runs Ansible to the production VM—use **`input` submitter** restrictions in Jenkins if you need branch- or role-based control.
+**Branch flow (see `jenkins-demo-app/Jenkinsfile`):**
+
+- **Feature / non-`main` branches** (Multibranch, or any branch that is not `main`/`master`): run **Build → tests → Sonar → Nexus → Deploy to Staging → Integration Test**. No production stages.
+- **`main` or `master`** (after you merge): run the same build/quality/Nexus steps, **skip** staging and integration, then **Production approval (manual)** and **Deploy to Production** (Ansible).
+
+Enforce “merge only after green CI” in your Git host (**GitHub branch protection**, **GitLab protected branches**, etc.) by requiring the Jenkins status on **merge requests** / **pull requests** before allowing merge into `main`.
+
+The pipeline detects **`main`/`master`** via **`BRANCH_NAME`** or **`GIT_BRANCH`** (`origin/main`, etc.); see **`isReleaseProdBranch()`** in the Jenkinsfile if your default branch uses another name.
 
 ### Slack notifications (`jenkins-demo-app/Jenkinsfile`)
 
