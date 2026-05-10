@@ -235,6 +235,52 @@ Notifications:
 
 If Jenkins **In-process Script Approval** prompts for **`JsonOutput`** or the helper methods, approve the signatures once.
 
+### GitHub: trigger CI on `dev` (or any branch) and show status on commits
+
+This is configured in **GitHub** and **Jenkins**, not inside the `Jenkinsfile`. You need the **GitHub** plugin (and usually **GitHub Branch Source** for multibranch).
+
+#### 1) Jenkins ↔ GitHub authentication
+
+Create a **GitHub Personal Access Token** (classic) or fine-grained token that can:
+
+- Read the repo and clone (`Contents` / `repo` scope as required by your setup).
+- Update commit status / checks (`repo:status` on classic PAT, or equivalent on fine-grained).
+- Manage webhooks on the repo (**classic:** tick **`admin:repo_hook`**, or use **GitHub Apps** with hook permissions).
+
+In Jenkins: **Manage Jenkins** → **Credentials** → add **Username with password** (username = your GitHub username, password = PAT) or use a **GitHub App** credential if you use the GitHub App integration.
+
+#### 2) Recommended: Multibranch Pipeline from GitHub
+
+1. **New Item** → **Multibranch Pipeline**.
+2. **Branch Sources** → **Add source** → **GitHub**.
+3. Set the **Owner** (org or user) and **Repository**, pick the **credentials** from step 1.
+4. Under **Behaviours**, use **Discover branches** (e.g. all branches, or exclude `main` if you only want feature branches—match how you use `dev` and `main`).
+5. Save. Jenkins will try to **register a webhook** on the repo automatically if the token can create hooks and Jenkins has a **public URL** GitHub can reach.
+6. Pushes to **`dev`** create or update the branch job; each run uses **`jenkins-demo-app/Jenkinsfile`** from that branch.
+
+**Do not** set **Branch Specifier** to invalid patterns like **`refs/heads/**`** or bare `**` in places Git turns into a JGit refspec (this causes `Invalid refspec refs/heads/**`). Use the multibranch **“Discover branches”** behaviour instead of hand-typing glob refspecs in the wrong field.
+
+#### 3) GitHub commit / PR status (yellow ● / green ✓ on commits)
+
+With **GitHub Branch Source** and valid credentials, builds usually **publish status to GitHub** automatically for each commit (and for PRs when you build the PR revision).
+
+If status does not appear:
+
+- Confirm the PAT can write status (`repo:status` or full **`repo`** on classic).
+- In the multibranch job, check **GitHub** / **Build strategies** / trait docs for your plugin version—some installs need the **“Publish status to GitHub”** trait or similar.
+
+For a **single** “Pipeline” job (not multibranch) with **Git** SCM:
+
+- Enable **Build Triggers** → **GitHub hook trigger for GITScm polling**.
+- In the GitHub repo: **Settings** → **Webhooks** → **Add webhook**.
+- **Payload URL:** `https://<your-jenkins>/github-webhook/` (path used by the **GitHub** Jenkins plugin; your reverse proxy must forward HTTPS to Jenkins).
+- Content type **application/json**, events **Just the push event** (or “Let me select” and include pushes).
+- Webhook must return **200** from Jenkins when you redeliver—fix URL/firewall if not.
+
+#### 4) Require green CI before merging (optional)
+
+In the GitHub repo: **Settings** → **Branches** → **Branch protection** for **`main`** → enable **Require status checks to pass** and select the Jenkins / GitHub check name that appears on PRs (exact name depends on the job and plugin).
+
 ---
 
 ## References
@@ -244,3 +290,5 @@ If Jenkins **In-process Script Approval** prompts for **`JsonOutput`** or the he
 - [SonarQube Server with Docker](https://docs.sonarsource.com/sonarqube-server/latest/setup-and-upgrade/install-the-server/installing-sonarqube-from-docker/)
 - [Sonatype Nexus Repository (Docker Hub)](https://hub.docker.com/r/sonatype/nexus3/)
 - [Slack Incoming Webhooks](https://api.slack.com/messaging/webhooks)
+- [Jenkins GitHub Branch Source Plugin](https://plugins.jenkins.io/github-branch-source/)
+- [GitHub webhooks for Jenkins (GitHub plugin)](https://plugins.jenkins.io/github/)
