@@ -132,6 +132,8 @@ pipeline {
     }
 
     options {
+        // Links the job to a GitHub repo (needs GitHub plugin) so build pages can show GitHub integration / commit context.
+        githubProjectProperty(projectUrlStr: 'https://github.com/zagani212/50-DevOps-Projects/')
         timestamps()
         buildDiscarder(logRotator(numToKeepStr: '20'))
     }
