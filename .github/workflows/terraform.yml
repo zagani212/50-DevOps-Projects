@@ -17,7 +17,13 @@ jobs:
           workload_identity_provider: 'projects/1073687322815/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
           service_account: 'terraform-project2@project-55dcf55b-027c-4122-a45.iam.gserviceaccount.com'
 
-      - name: 'Terraform Init'
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.0"
+          terraform_wrapper: false
+
+      - name: Terraform Init
         run: terraform init
       
       - name: 'Terraform Apply'
