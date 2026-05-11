@@ -1,0 +1,65 @@
+name: Terraform Deployment
+on: 
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  id-token: write # Required for requesting the JWT
+  contents: read  # Required for actions/checkout
+  pull-requests: write # Required for actions/github-script
+
+jobs:
+  terraform-ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: 'auth'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: 'projects/1073687322815/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'terraform-project2@project-55dcf55b-027c-4122-a45.iam.gserviceaccount.com'
+          token_format: 'access_token'
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.0"
+          terraform_wrapper: false
+
+      - name: Create auto.tfvars file
+        run: |
+          echo 'environment = "${{ secrets.ENVIRONMENT }}"' >> 02_infra_as_code_with_terraform/gcp/terraform.auto.tfvars
+          echo 'region = "${{ secrets.REGION }}"' >> 02_infra_as_code_with_terraform/gcp/terraform.auto.tfvars
+          echo 'project_id = "${{ secrets.PROJECT_ID }}"' >> 02_infra_as_code_with_terraform/gcp/terraform.auto.tfvars
+
+      - name: Terraform Init
+        run: cd 02_infra_as_code_with_terraform/gcp &&terraform init
+
+      - name: Terraform format
+        run: cd 02_infra_as_code_with_terraform/gcp && terraform fmt -check
+
+      - name: Terraform validate
+        run: cd 02_infra_as_code_with_terraform/gcp && terraform validate
+
+      - name: Terraform plan
+        run: cd 02_infra_as_code_with_terraform/gcp && terraform plan
+
+      - name: Update Pull Request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
+            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+            <details><summary>Show Plan</summary>
+            \`\`\`hcl
+            ${{ steps.plan.outputs.stdout }}
+            \`\`\`
+            </details>`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
