@@ -24,7 +24,7 @@ jobs:
           terraform_wrapper: false
 
       - name: Terraform Init
-        run: terraform init
+        run: cd 02_infra_as_code_with_terraform/gcp &&terraform init
       
       - name: 'Terraform Apply'
-        run: terraform apply -auto-approve
+        run: cd 02_infra_as_code_with_terraform/gcp && terraform apply -auto-approve
