@@ -16,12 +16,19 @@ jobs:
         with:
           workload_identity_provider: 'projects/1073687322815/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
           service_account: 'terraform-project2@project-55dcf55b-027c-4122-a45.iam.gserviceaccount.com'
+          token_format: 'access_token'
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.15.0"
           terraform_wrapper: false
+
+      - name: Create auto.tfvars file
+        run: |
+          echo 'environment = "${{ secrets.ENVIRONMENT }}"' >> 02_infra_as_code_with_terraform/gcp/terraform.auto.tfvars
+          echo 'region = "${{ secrets.REGION }}"' >> 02_infra_as_code_with_terraform/gcp/terraform.auto.tfvars
+          echo 'project_id = "${{ secrets.PROJECT_ID }}"' >> 02_infra_as_code_with_terraform/gcp/terraform.auto.tfvars
 
       - name: Terraform Init
         run: cd 02_infra_as_code_with_terraform/gcp &&terraform init
