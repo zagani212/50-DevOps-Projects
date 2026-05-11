@@ -32,6 +32,7 @@ jobs:
         run: cd 02_infra_as_code_with_terraform/gcp &&terraform init
 
       - name: Terraform format
+        id: fmt
         run: cd 02_infra_as_code_with_terraform/gcp && terraform fmt -check
 
       - name: Create auto.tfvars file
@@ -45,19 +46,43 @@ jobs:
         run: cd 02_infra_as_code_with_terraform/gcp && terraform validate
 
       - name: Terraform plan
-        run: cd 02_infra_as_code_with_terraform/gcp && terraform plan
+        id: plan
+        run: | 
+          cd 02_infra_as_code_with_terraform/gcp && terraform plan -no-color> plan_output.txt
+          
+          # 2. Write the output to the GitHub Step summary and outputs
+          echo "stdout<<EOF" >> $GITHUB_OUTPUT
+          cat plan_output.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Update Pull Request
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
-            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
-            <details><summary>Show Plan</summary>
+            // 1. Prepare the success/failure emojis
+            const fmtOutcome = '${{ steps.fmt.outcome }}' === 'success' ? '✅' : '❌';
+            const planOutcome = '${{ steps.plan.outcome }}' === 'success' ? '✅' : '❌';
+            const plan = `${{ steps.plan.outputs.stdout }}`;
+            const trimmedPlan = plan.length > 60000 ? plan.substring(0, 60000) + "\n... (Plan truncated due to length)" : plan;
+            
+            // 2. Build the body without leading indentation
+            const output = `### Terraform CI Report
+            #### Format and Style: ${fmtOutcome} \`${{ steps.fmt.outcome }}\`
+            #### Terraform Plan: ${planOutcome} \`${{ steps.plan.outcome }}\`
+            
+            <details>
+            <summary>Click to expand full Plan output</summary>
+            
             \`\`\`hcl
-            ${{ steps.plan.outputs.stdout }}
+            ${trimmedPlan}
             \`\`\`
-            </details>`;
+            
+            </details>
+            
+            *Pushed by: @${context.actor}, Action: \`${context.eventName}\`*`;
+            
+            // 3. Create the comment
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
