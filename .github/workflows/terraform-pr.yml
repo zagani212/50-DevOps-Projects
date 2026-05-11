@@ -28,17 +28,18 @@ jobs:
           terraform_version: "1.15.0"
           terraform_wrapper: false
 
+      - name: Terraform Init
+        run: cd 02_infra_as_code_with_terraform/gcp &&terraform init
+
+      - name: Terraform format
+        run: cd 02_infra_as_code_with_terraform/gcp && terraform fmt -check
+
       - name: Create auto.tfvars file
         run: |
           echo 'environment = "${{ secrets.ENVIRONMENT }}"' >> 02_infra_as_code_with_terraform/gcp/terraform.auto.tfvars
           echo 'region = "${{ secrets.REGION }}"' >> 02_infra_as_code_with_terraform/gcp/terraform.auto.tfvars
           echo 'project_id = "${{ secrets.PROJECT_ID }}"' >> 02_infra_as_code_with_terraform/gcp/terraform.auto.tfvars
 
-      - name: Terraform Init
-        run: cd 02_infra_as_code_with_terraform/gcp &&terraform init
-
-      - name: Terraform format
-        run: cd 02_infra_as_code_with_terraform/gcp && terraform fmt -check
 
       - name: Terraform validate
         run: cd 02_infra_as_code_with_terraform/gcp && terraform validate
